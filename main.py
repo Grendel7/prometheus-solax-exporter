@@ -1,6 +1,6 @@
 import os
 import solax
-from prometheus_client import Gauge, CollectorRegistry, Info
+from prometheus_client import Gauge, Info
 from prometheus_client.exposition import generate_latest
 from aiohttp import web
 from solax.inverter import DiscoveryError
@@ -13,7 +13,13 @@ class SolaxWebApplication(object):
     def __init__(self, api_host):
         self.api_host = api_host
         self.real_time_api = None
-        self.sensor_map = None
+        self.sensor_map = {}
+        self.metric_map = {}
+
+        self.up_metric = Gauge('solax_up', 'Whether the Solax inverter is reachable')
+        self.up_metric.set(0)
+
+        self.info_metric = Info('solax_inverter_info', 'Information about the Solax inverter')
 
     async def connect_to_solax(self, *args):
         try:
@@ -26,6 +32,13 @@ class SolaxWebApplication(object):
             return False
         else:
             self.sensor_map = self.real_time_api.inverter.sensor_map()
+            self.up_metric.set(1)
+
+            self.metric_map = {}
+            for metric_name, (_, metric_unit) in self.real_time_api.inverter.sensor_map().items():
+                safe_metric_name = metric_name.lower().replace("\'", "").replace(' ', '_').replace('-', '_')
+                metric_obj = Gauge(f"solax_{safe_metric_name}", f"{metric_name} in {metric_unit}")
+                self.metric_map[metric_name] = metric_obj
 
         return True
 
@@ -33,50 +46,34 @@ class SolaxWebApplication(object):
         return web.Response(text="Prometheus metrics available on /metrics")
 
     async def metrics(self, request):
-        registry = await self.get_metrics_registry()
+        await self.read_metrics()
 
-        return web.Response(body=generate_latest(registry), content_type='text/plain')
+        return web.Response(body=generate_latest(), content_type='text/plain')
 
-    async def get_metrics_registry(self):
-        registry = CollectorRegistry(auto_describe=True)
-
+    async def read_metrics(self):
         # Error case 1: The exporter has never connected to the inverter.
         if not self.real_time_api:
             connect_result = await self.connect_to_solax()
 
             if not connect_result:
-                self.set_up_metric(False, registry)
-                return registry
+                self.up_metric.set(0)
+                return
 
         # Error case 2: The exporter has lost it's connection to the inverter.
         try:
             response = await self.real_time_api.get_data()
         except solax.inverter.InverterError as e:
             logging.error(e)
-            self.set_up_metric(False, registry)
-            return registry
+            self.up_metric.set(0)
+        else:
+            self.info_metric.info({
+                'serial_number': response.serial_number,
+                'type': response.type,
+                'version': response.version,
+            })
 
-        info_metric = Info('solax_inverter_info', 'Information about the Solax inverter', registry=registry)
-        info_metric.info({
-            'serial_number': response.serial_number,
-            'type': response.type,
-            'version': response.version,
-        })
-
-        for metric_name, metric_value in response.data.items():
-            _, metric_unit = self.sensor_map[metric_name]
-
-            metric_class = Gauge
-
-            safe_metric_name = "solax_" + metric_name.lower().replace("\'", "").replace(' ', '_').replace('-', '_')
-            metric_obj = metric_class(safe_metric_name, f"{metric_name} in {metric_unit}", registry=registry)
-            metric_obj.set(metric_value)
-
-        return registry
-
-    def set_up_metric(self, success, registry):
-        up_metric = Gauge('solax_up', 'Whether the Solax inverter is reachable', registry=registry)
-        up_metric.set(int(success))
+            for metric_name, metric_value in response.data.items():
+                self.metric_map[metric_name].set(metric_value)
 
 
 solax_app = SolaxWebApplication(os.environ.get('SOLAX_API_HOST'))
