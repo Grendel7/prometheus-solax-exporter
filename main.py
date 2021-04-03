@@ -66,6 +66,7 @@ class SolaxWebApplication(object):
             logging.error(e)
             self.up_metric.set(0)
         else:
+            self.up_metric.set(1)
             self.info_metric.info({
                 'serial_number': response.serial_number,
                 'type': response.type,
