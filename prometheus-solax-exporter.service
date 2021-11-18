@@ -1,0 +1,15 @@
+[Unit]
+Description=Prometheus Solax Exporter
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/prometheus-solax-exporter/venv/bin/python /opt/prometheus-solax-exporter/src/main.py
+Environment=SOLAX_API_HOST=5.8.8.8
+Environment=PYTHONUNBUFFERED=1
+Environment=EXPORTER_PORT=9797
+User=prometheus-solax-exporter
+
+[Install]
+WantedBy=default.target
+
