@@ -27,6 +27,10 @@ The script accepts the following environment variables:
 - SOLAX_API_HOST: The address where the Solax web can be accessed. You should be able to find the address by inspecting the network information of the WiFi network, or by checking the manual of your converter for the address where to configure the WiFi connection (the metrics API is on the same interface).
 - EXPORTER_PORT: The port where the metrics interface will be available on.
 
+## Compatibility
+
+This exporter was tested with an X1-Boost-Air-Mini, but should work with most/all Solax models. Or at least those supported by the Solax client this script is based on.
+
 ## Credits
 
 Thanks to squishykid for developing the [Solax API client](https://github.com/squishykid/solax).
